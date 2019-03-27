@@ -150,7 +150,9 @@ def get_ssh_user(config, instance):
     ssh_user = None
 
     for inv in inventory(config).inventories:
-        if inv.name == instance.source and inv.ssh_user != None:
+        if instance.username != None:
+            return instance.username 
+        elif inv.name == instance.source and inv.ssh_user != None:
             return inv.ssh_user
 
     if config.dig('ssh', 'user'):

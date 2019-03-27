@@ -111,11 +111,16 @@ def prompt_targets(question, targets=None, instances=None, multiple=True, config
 
     display_instances = collections.OrderedDict()
     # TODO: fix cap'd length... it's pretty arbitraty
-    maxLen = min(max([len(instance.name) for instance in instances]), 55)
-    for instance in sorted(instances):
-        display = str("%-" + str(maxLen+3) + "s (%s)") % (instance.name, instance.address)
-        display_instances[display] = instance
-
+    if instances[0].instname:
+        maxLen = min(max([len(instance.instname) for instance in instances]), 55)
+        for instance in sorted(instances):
+            display = str("%-" + str(maxLen+3) + "s (%s)") % (instance.instname, instance.address)
+            display_instances[display] = instance    
+    else:
+        maxLen = min(max([len(instance.name) for instance in instances]), 55)
+        for instance in sorted(instances):
+            display = str("%-" + str(maxLen+3) + "s (%s)") % (instance.name, instance.address)
+            display_instances[display] = instance    
     questions = []
 
     if multiple:
@@ -215,7 +220,7 @@ def ssh_handler(args, config):
         layout = args['--layout']
 
     if args['--tmux'] or config.dig('ssh', 'tmux'):
-        tmux.run(config, commands, args['-w'], layout, args['-d'], args['-s'])
+        tmux.run(config, commands, args['-w'], layout, args['-d'], args['-s'],session_name='_'.join(args['<host>']))
     else:
         cmd = list(commands.values())[0]
         if args['-d']:

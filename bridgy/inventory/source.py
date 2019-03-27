@@ -20,7 +20,7 @@ class InstanceType:
     ECS = 'ECS'
 
 Bastion = collections.namedtuple("Bastion", "destination options")
-Instance = collections.namedtuple("Instance", "name address aliases source container_id type")
+Instance = collections.namedtuple("Instance", "name address aliases source container_id type username instname")
 # allow there to be optional kwargs that default to None
 Instance.__new__.__defaults__ = (None,) * len(Instance._fields)
 

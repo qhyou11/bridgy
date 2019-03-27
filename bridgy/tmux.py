@@ -2,22 +2,25 @@ import os
 import shlex
 import logging
 import subprocess
+import time
 
 logger = logging.getLogger()
+
 
 def is_installed():
     if os.system('which tmux >/dev/null 2>&1') == 0:
         return True
     return False
 
-def run(config, commands, in_windows=False, layout=None, dry_run=False, sync=False):
+
+def run(config, commands, in_windows=False, layout=None, dry_run=False, sync=False, session_name=None):
     layout_cmds = None
     if layout:
         layout_cmds = config.dig('tmux', 'layout', layout)
         if not layout_cmds:
             raise RuntimeError("Config does not define layout: %s" % layout)
 
-    with TmuxSession(commands=commands, in_windows=in_windows, layout_cmds=layout_cmds, dry_run=dry_run, sync=sync) as tmux:
+    with TmuxSession(session_name=session_name, commands=commands, in_windows=in_windows, layout_cmds=layout_cmds, dry_run=dry_run, sync=sync) as tmux:
         tmux.attach()
 
 
@@ -38,12 +41,16 @@ class TmuxSession(object):
         if len(self._commands) == 0:
             return self
 
+        if self._session_name in self.list_sessions():
+            self._created_session = True
+            return self
         # open a set of windows and run some commands
         if self._layout_cmds:
             for cmdIdx, (name, command) in enumerate(self._commands.items()):
 
                 if cmdIdx == 0:
-                    self.new_session(self._session_name, window_name=name, command=command)
+                    self.new_session(self._session_name,
+                                     window_name=name, command=command)
                 else:
                     # new window for all layout panes running the same cmd
                     self.new_window(name, command)
@@ -65,19 +72,30 @@ class TmuxSession(object):
 
         # open one window
         else:
+            lastGrpName = ''
             for cmdIdx, (name, command) in enumerate(self._commands.items()):
                 if self._in_windows:
                     if cmdIdx == 0:
-                        self.new_session(self._session_name, window_name=name, command=command)
+                        self.new_session(self._session_name,
+                                         window_name=name, command=command)
                     else:
                         # new window for all layout panes running the same cmd
                         self.new_window(name, command)
                 else:
+                    currGrpName = name.split('-')[0]
                     if cmdIdx == 0:
-                        self.new_session(self._session_name, window_name='remote-session', command=command)
+                        if currGrpName != '':
+                            lastGrpName = currGrpName
+                        self.new_session(
+                            self._session_name, window_name=lastGrpName, command=command)
+                        self.ban_autorename()
                     else:
-                        self.split_window(command)
-
+                        if lastGrpName != '' and lastGrpName != currGrpName:
+                            # self.rename_window(lastGrpName)
+                            lastGrpName = currGrpName
+                            self.new_window(currGrpName, command)
+                        else:
+                            self.split_window(command)
                 self.select_layout('tiled')
 
         if self._sync:
@@ -110,12 +128,14 @@ class TmuxSession(object):
         if self._dry_run:
             return ''
 
-        pipes = subprocess.Popen(shlex.split(' '.join(cmd)), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        pipes = subprocess.Popen(shlex.split(
+            ' '.join(cmd)), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         std_out, std_err = pipes.communicate()
 
         if pipes.returncode != 0 and self._show_errors:
             logger.error("Tmux failed (rc:%d, error:%s): %s" % (pipes.returncode,
-                                                                repr(std_err.decode('utf-8').strip("\n").replace("\n",', ')),
+                                                                repr(std_err.decode(
+                                                                    'utf-8').strip("\n").replace("\n", ', ')),
                                                                 " ".join(cmd)))
 
         elif len(std_err) and self._show_errors:
@@ -141,6 +161,10 @@ class TmuxSession(object):
             self.tmux('new-window', '-n', name)
 
     @run_only_with_session
+    def rename_window(self, name):
+        self.tmux('rename-window', name)
+
+    @run_only_with_session
     def split_window(self, command):
         self.tmux('split-window', '-t', self._session_name, command)
 
@@ -164,8 +188,17 @@ class TmuxSession(object):
     def kill_pane(self, n):
         self.tmux('kill-pane', '-t', str(n))
 
+    @run_only_with_session
+    def ban_autorename(self):
+        self.tmux('set-option', '-g', 'allow-rename', 'off')
+
     @suppress_errors
     @run_only_with_session
     def kill_session(self):
         self.tmux('kill-session', '-t', self._session_name)
         self._created_session = False
+
+    def list_sessions(self):
+        resList = [str.strip() for str in self.tmux(
+            'ls', '-F', "#{session_name}").split('\n')]
+        return resList
